@@ -1,2 +1,2 @@
 # LLM-KG-Generator
-A method for creating knowledge graphs with an LLM in a format amenable to using the KG to do RAG
+A method for creating knowledge graphs with an LLM in a format amenable to using the KG to do RAG. Inspired by [Microsoft blog post.](https://www.microsoft.com/en-us/research/blog/graphrag-unlocking-llm-discovery-on-narrative-private-data/) and [pre-print.](https://arxiv.org/pdf/2404.16130)
