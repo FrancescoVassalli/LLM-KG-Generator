@@ -4,5 +4,5 @@ from typing import List
 class Entity(BaseModel):
     id:int
     name:str
-    type:str
+    summary:str
     sources:List[str]
