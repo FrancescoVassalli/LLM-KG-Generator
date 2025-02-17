@@ -9,7 +9,12 @@ from kg_interface import (
     load_kg,
     print_kg,
     get_entity_summary_tool,
-    get_entity_summary_tool_def
+    get_entity_summary_tool_def,
+    set_current_user_input,
+    update_entity_summary_tool,
+    update_entity_summary_tool_def,
+    check_for_relationship_tool,
+    check_for_relationship_tool_def
 )
 import json
 from typing import List
@@ -31,14 +36,34 @@ CHECK_ENTITY_SYSTEM_PROMPT = ''.join([
     'If you think there are no more entities to add check again. Sometimes the user will give you a lot of text and your attention is only so long.',
     'The third phase of your task is to reference the summaries for the entities in the knowledge graph.',
     'Call get_entity_summary once per entity in the knowledge graph to read the summary for each entity.',
+    'Now that you have summaries from the knowledge graph for your entities you should use this information to make informed decisions in the subsequent phases',
+    'The fourth phase of your task is to determine which entities should have their summmary updated.',
+    "An entity's summary should be updated when the text provided by the user adds significant new information about the entity",
+    "For each entity that should have its summary updated call update_entity_summary"
 ])
 
-'Using the entity summary from the knowledge graph and the information from the text the user provided determine if the summary needs to be updated.',
-'If the summary does need to be updated call update_summary'
+CHECK_RELATIONSHIP_SYSTEM_PROMPT = ''.join([
+    'You are a detial oriented knowledge graph creator.',
+    'In order to perform your mission you will use the provided API to interface with the knowledge graph.',
+    'The goal of the knowledge graph is to hold all of the entities (persons, leaders, reporters, newspapers, groups, countries, organizations, cities, provinces, buildings, treaties, meetings, important dates, important claims) and their relationships.',
+    'For the first phase of your task check if the knowledge graph has an entry for each of the entities in the text the user provides.',
+    'Therefore you should call the check_for_entity tool once per entity in the input text.',
+    'The second phase of your task is to find relationships between the entities in the knowledge graph.',
+    'You are looking for relationships like negotiations, meetings, supporting, ignoring, alliances, fighting, condeming, participating, urging, encouraging, killing, looting, alleging, fleeing',
+    'Relationships on the knowledge graph are directional connections between entities in the knowledge graph. They have a single starting entity, a single ending entity, a one word relationship name, and a short summary of the relationship.',
+    'It is not important to find every possible relation between entities in the knowledge graph. Brevity and focus on the most important relationships is much appreciated.',
+    'For each relationship you indentify from the text that is between entities in the knowledge graph call check_for_relationship',
+])
 
-tool_names_to_def_dict = {'check_for_entity':check_for_entity_tool, 'add_entity':add_entity_tool, 'get_entity_summary':get_entity_summary_tool}
+tool_names_to_def_dict = {
+    'check_for_entity':check_for_entity_tool, 
+    'add_entity':add_entity_tool, 
+    'get_entity_summary':get_entity_summary_tool,
+    'update_entity_summary':update_entity_summary_tool,
+    'check_for_relationship':check_for_relationship_tool}
 
-check_entity_tools = [check_for_entity_tool_def, add_entity_tool_def, get_entity_summary_tool_def]
+check_entity_tools = [check_for_entity_tool_def, add_entity_tool_def, get_entity_summary_tool_def,update_entity_summary_tool_def]
+check_relationship_tools = [check_for_entity_tool_def,check_for_relationship_tool_def]
 
 router = APIRouter(
     prefix="/mock",
@@ -48,10 +73,21 @@ router = APIRouter(
 
 @router.get("/check_text_for_entities/{text}")
 async def check_text_for_entities(request: Request, text:str):
+    set_current_user_input(text)
     messages = []
     completion = None
     while completion is None or has_tool_calls(completion):
         completion = prompt_model_with_tools_and_text(text,CHECK_ENTITY_SYSTEM_PROMPT,messages,check_entity_tools)
+        messages.extend(handle_tool_calls(completion))
+    return completion
+
+@router.get("/check_text_for_relationships/{text}")
+async def check_text_for_relationships(request: Request, text:str):
+    set_current_user_input(text)
+    messages = []
+    completion = None
+    while completion is None or has_tool_calls(completion):
+        completion = prompt_model_with_tools_and_text(text,CHECK_RELATIONSHIP_SYSTEM_PROMPT,messages,check_relationship_tools)
         messages.extend(handle_tool_calls(completion))
     return completion
 
