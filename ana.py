@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 from openai import OpenAI
+import asyncio
 from kg_interface import (
     check_for_entity_tool, 
     check_for_entity_tool_def, 
@@ -14,8 +15,19 @@ from kg_interface import (
     update_entity_summary_tool,
     update_entity_summary_tool_def,
     check_for_relationship_tool,
-    check_for_relationship_tool_def
+    check_for_relationship_tool_def,
+    add_relationship_tool,
+    add_relationship_tool_def,
+    print_edges,
+    convert_to_multidigraph,
+    kg_networkx_plot,
+    kg_networkx_degree_hist,
+    print_solo_entities,
+    connect_nodes_by_summary,
+    find_communities,
+    get_community_summaries
 )
+from community_answer_interface import is_community_relevant
 import json
 from typing import List
 import logging
@@ -39,20 +51,26 @@ CHECK_ENTITY_SYSTEM_PROMPT = ''.join([
     'Now that you have summaries from the knowledge graph for your entities you should use this information to make informed decisions in the subsequent phases',
     'The fourth phase of your task is to determine which entities should have their summmary updated.',
     "An entity's summary should be updated when the text provided by the user adds significant new information about the entity",
+    'Another expert will handle actually updating the summary. You just need to identifiy the entities which need an update by name.',
     "For each entity that should have its summary updated call update_entity_summary"
 ])
 
 CHECK_RELATIONSHIP_SYSTEM_PROMPT = ''.join([
-    'You are a detial oriented knowledge graph creator.',
+    'You are a detial oriented expert knowledge graph creator.',
     'In order to perform your mission you will use the provided API to interface with the knowledge graph.',
     'The goal of the knowledge graph is to hold all of the entities (persons, leaders, reporters, newspapers, groups, countries, organizations, cities, provinces, buildings, treaties, meetings, important dates, important claims) and their relationships.',
     'For the first phase of your task check if the knowledge graph has an entry for each of the entities in the text the user provides.',
     'Therefore you should call the check_for_entity tool once per entity in the input text.',
+    'If the knowledge graph does not have an entity, you may want to double check if it has the same entity under a different or similar name.',
     'The second phase of your task is to find relationships between the entities in the knowledge graph.',
     'You are looking for relationships like negotiations, meetings, supporting, ignoring, alliances, fighting, condeming, participating, urging, encouraging, killing, looting, alleging, fleeing',
     'Relationships on the knowledge graph are directional connections between entities in the knowledge graph. They have a single starting entity, a single ending entity, a one word relationship name, and a short summary of the relationship.',
     'It is not important to find every possible relation between entities in the knowledge graph. Brevity and focus on the most important relationships is much appreciated.',
-    'For each relationship you indentify from the text that is between entities in the knowledge graph call check_for_relationship',
+    'For each relationship you indentify in the text that is between entities in the knowledge graph call check_for_relationship',
+    'The third phase of your task is to add missing relationships to the knowledge graph.',
+    "In this phase you want to make the knowledge graph more complete by adding new relationships identified from the user's new text",
+    "However you only want to add relationships between entities that you already confirmed are in the knowledge graph during the first phase. Other experts are in charge of adding entities."
+    'Therefore, you should call add_relationship for each relationship that is not in the graph',
 ])
 
 tool_names_to_def_dict = {
@@ -60,16 +78,56 @@ tool_names_to_def_dict = {
     'add_entity':add_entity_tool, 
     'get_entity_summary':get_entity_summary_tool,
     'update_entity_summary':update_entity_summary_tool,
-    'check_for_relationship':check_for_relationship_tool}
+    'check_for_relationship':check_for_relationship_tool,
+    'add_relationship': add_relationship_tool}
 
 check_entity_tools = [check_for_entity_tool_def, add_entity_tool_def, get_entity_summary_tool_def,update_entity_summary_tool_def]
-check_relationship_tools = [check_for_entity_tool_def,check_for_relationship_tool_def]
+check_relationship_tools = [check_for_entity_tool_def,check_for_relationship_tool_def,add_relationship_tool_def]
 
 router = APIRouter(
     prefix="/mock",
     tags=["mock"],
     responses={404: {"description": "Not found"}},
 )
+
+@router.get("/print_entity_summary/{name}")
+async def print_entity_summary(request: Request, name:str):
+    logger.warning(get_entity_summary_tool(name))
+    return {200:""}
+
+@router.get("/print_kg_edges")
+async def print_kg_edges(request: Request):
+    print_edges()
+    return {200:""}
+
+@router.get("/print_unconnected_entities")
+async def print_unconnected_entities(request: Request):
+    print_solo_entities()
+    return {200:""}
+
+@router.get("/auto-relationship-builder")
+async def auto_relationship_builder(request: Request):
+    connect_nodes_by_summary()
+    return {200:""}
+
+@router.get("/leiden-communities")
+async def leiden_communities(request: Request):
+    find_communities()
+    logger.warning(f"Updated {len(get_community_summaries())} summaries")
+    return {200:""}
+
+@router.get("/print-community-summaries")
+async def print_community_summaries(request: Request):
+    for summary in get_community_summaries().values():
+        logger.warning(f"Summary\n{summary}")
+    return {200:""}
+
+@router.get("/check-relevant-communities/{text}")
+async def check_relevant_communities(request: Request,text:str):
+    tasks = [is_community_relevant(community_summary,text) for community_summary in get_community_summaries().values()]
+    results = await asyncio.gather(*tasks)
+    logger.warning(results)
+    return {200:""}
 
 @router.get("/check_text_for_entities/{text}")
 async def check_text_for_entities(request: Request, text:str):
@@ -110,6 +168,27 @@ async def read_kg_from_file(request: Request, filename:str):
     load_kg(filename)
     return {200:""}
 
+@router.get("/convert-kg-to-networkx-multidigraph")
+async def convert_kg_to_networkx_multidigraph(request: Request):
+    convert_to_multidigraph()
+    return {200:""}
+
+@router.get("/networkx-plot")
+async def networkx_plot(request: Request):
+    kg_networkx_plot()
+    return {200:""}
+
+@router.get("/networkx-degree-hist")
+async def networkx_degree_hist(request: Request):
+    kg_networkx_degree_hist()
+    return {200:""}
+
+@router.get("/expand-kg-with-text/{text}")
+async def expand_kg_with_text(request: Request,text:str):
+    await check_text_for_entities(request,text)
+    await check_text_for_relationships(request,text)
+    return {200:""}
+
 def has_tool_calls(completion)->bool:
     return not completion.choices[0].message.tool_calls is None and len(completion.choices[0].message.tool_calls) >0
 
@@ -119,8 +198,10 @@ def handle_tool_calls(completion)->List:
         for tool_call in completion.choices[0].message.tool_calls:
             name = tool_call.function.name
             args = json.loads(tool_call.function.arguments)
-
-            result = tool_names_to_def_dict[name](**args)
+            try:
+                result = tool_names_to_def_dict[name](**args)
+            except:
+                logger.exception(f"Failed to call tool with tool_call {tool_call}")
             tool_response_messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
