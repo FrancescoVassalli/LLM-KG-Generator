@@ -8,10 +8,12 @@ import json
 from typing import Dict, Tuple, List
 from summary_update_interface import complete_entity_summary_update
 import networkx as nx
+import nx_arangodb  as nxadb
 import matplotlib.pyplot as plt
 import igraph as ig
 import leidenalg as la
 from community_summary_interface import generate_community_summary
+
 
 logger = logging.getLogger("kg_interface")
 
@@ -24,6 +26,7 @@ edges: Dict[Tuple[str,str,str],Relationship] = {}
 kg_communities: Dict[int,List[int]] ={}
 kg_community_summaries: Dict[int,str] = {}
 nx_graph:nx.Graph = None
+nxadb_graph:nxadb.Graph = None
 
 current_user_input:str = None
 
@@ -49,13 +52,32 @@ def print_kg()->None:
 def print_edges()->None:
     logger.warning(f"Printing edges\n{json.dumps(list(edges.values()),default=json_encoder_for_pydantic)}")
 
+def get_nxadb_graph()->nxadb.Graph:
+    return nxadb_graph
+
+def standardize_summary_text(summary:str)->str:
+    return " ".join([standardize_entity_name(word) for word in summary.split(' ')])
+
 def convert_to_multidigraph()->None:
     global nx_graph
+    global nxadb_graph
     nx_graph = nx.MultiDiGraph()
     for entity in kg.values():
-        nx_graph.add_node(entity.id,name=entity.name,summary=entity.summary)
+        nx_graph.add_node(entity.id,name=entity.name,summary=standardize_summary_text(entity.summary))
     for relationship_key, relationship in edges.items():
-        nx_graph.add_edge(kg[relationship_key[0]].id,kg[relationship_key[1]].id,relationship_key,summary=relationship.summary)
+        nx_graph.add_edge(
+            kg[relationship_key[0]].id,
+            kg[relationship_key[1]].id,
+            relationship_key,
+            summary=standardize_summary_text(relationship.summary)
+        )
+    logger.warning(f"Converting {nx_graph.number_of_nodes()} node networkx graph to arangodb")
+    nxadb_graph = nxadb.MultiDiGraph(
+        incoming_graph_data=nx_graph,
+        name="sudan",
+        overwrite_graph=True
+    )
+    logger.warning(f"New Arangodb graph has {nxadb_graph.number_of_nodes()} nodes")
 
 def print_solo_entities()->None:
     if nx_graph is None:
@@ -122,7 +144,11 @@ def find_communities()->None:
         community_attribute_dict = {entity_id: i for entity_id in community}
         nx.set_node_attributes(nx_graph,community_attribute_dict,"community")
         new_communities[i] = community
-        summary = generate_community_summary(nx_graph,community)
+        try:
+            summary = generate_community_summary(nxadb_graph,community)
+        except KeyError as e:
+            logger.exception(f"KeyError for {nxadb_graph.nodes}")
+            raise e
         logger.warning(f"Generated community summary {summary}")
         new_community_summaries[i] = summary
     set_communities(new_communities)

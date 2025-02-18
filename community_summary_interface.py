@@ -2,8 +2,8 @@ import networkx as nx
 from typing import List
 from openai import OpenAI
 import logging
+from utils import sort_list2_accordingto_list1, MAX_CONTEXT_WINDOW
 client = OpenAI()
-MAX_CONTEXT_WINDOW = 128000*4
 
 COMMUNITY_SUMMARY_SYSTEM_PROMPT = ''.join([
         'You are a detial oriented news summarizer.',
@@ -14,10 +14,7 @@ COMMUNITY_SUMMARY_SYSTEM_PROMPT = ''.join([
 logger = logging.getLogger("community_summary")
 
 
-def sort_list2_accordingto_list1(list1,list2,reverse=False):
-    # https://stackoverflow.com/questions/9764298/given-parallel-lists-how-can-i-sort-one-while-permuting-rearranging-the-other
-    # returns list1, list2 as tuples
-    return zip(*sorted(zip(list1, list2),reverse=reverse))
+
 
 def generate_community_summary(nx_graph:nx.Graph,community:List[int])->str:
     if len(community)==1:

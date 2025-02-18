@@ -25,9 +25,15 @@ from kg_interface import (
     print_solo_entities,
     connect_nodes_by_summary,
     find_communities,
-    get_community_summaries
+    get_community_summaries,
+    get_nxadb_graph
 )
-from community_answer_interface import is_community_relevant
+from community_answer_interface import (
+    is_community_relevant, 
+    complete_community_answer,
+    get_global_answer
+)
+from arango_query_interface import arango_connection_finder, arango_communities
 import json
 from typing import List
 import logging
@@ -110,6 +116,16 @@ async def auto_relationship_builder(request: Request):
     connect_nodes_by_summary()
     return {200:""}
 
+@router.get("/arango-relationship-builder")
+async def arango_relationship_builder(request: Request):
+    arango_connection_finder(get_nxadb_graph())
+    return {200:""}
+
+@router.get("/get-arango-communities")
+async def get_arango_communities(request: Request):
+    arango_communities()
+    return {200:""}
+
 @router.get("/leiden-communities")
 async def leiden_communities(request: Request):
     find_communities()
@@ -120,13 +136,35 @@ async def leiden_communities(request: Request):
 async def print_community_summaries(request: Request):
     for summary in get_community_summaries().values():
         logger.warning(f"Summary\n{summary}")
-    return {200:""}
+    return {200:""}  
 
 @router.get("/check-relevant-communities/{text}")
 async def check_relevant_communities(request: Request,text:str):
     tasks = [is_community_relevant(community_summary,text) for community_summary in get_community_summaries().values()]
     results = await asyncio.gather(*tasks)
     logger.warning(results)
+    return {200:""}
+
+@router.get("/get-community-answers/{text}")
+async def get_community_answers(request: Request,text:str):
+    tasks = [is_community_relevant(community_summary,text) for community_summary in get_community_summaries().values()]
+    relevancy_results = await asyncio.gather(*tasks)
+    relevant_community_summaries  = [community_summary for community_summary, relevancy_score in zip(get_community_summaries().values(),relevancy_results) if relevancy_score>20]
+    tasks = [complete_community_answer(relevant_summary,text) for relevant_summary in relevant_community_summaries]
+    community_answers = await asyncio.gather(*tasks)
+    logger.warning(community_answers)
+    return {200:""}
+
+@router.get("/get-global-answer/{text}")
+async def get_community_answers(request: Request,text:str):
+    tasks = [is_community_relevant(community_summary,text) for community_summary in get_community_summaries().values()]
+    relevancy_results = await asyncio.gather(*tasks)
+    relevant_community_summaries  = [community_summary for community_summary, relevancy_score in zip(get_community_summaries().values(),relevancy_results) if relevancy_score>20]
+    relevant_scores  = [relevancy_score for relevancy_score in relevancy_results if relevancy_score>20]
+    tasks = [complete_community_answer(relevant_summary,text) for relevant_summary in relevant_community_summaries]
+    community_answers = await asyncio.gather(*tasks)
+    global_answer = get_global_answer(community_answers,relevant_scores,text)
+    logger.warning(global_answer)
     return {200:""}
 
 @router.get("/check_text_for_entities/{text}")
