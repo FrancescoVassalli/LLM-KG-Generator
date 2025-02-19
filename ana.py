@@ -26,14 +26,18 @@ from kg_interface import (
     connect_nodes_by_summary,
     find_communities,
     get_community_summaries,
-    get_nxadb_graph
+    louvian, 
+    get_all_entities_from_string,
+    pagerank,
+    get_nxadb_subgraph,
+    add_substring_edges
 )
 from community_answer_interface import (
     is_community_relevant, 
     complete_community_answer,
     get_global_answer
 )
-from arango_query_interface import arango_connection_finder, arango_communities
+from arango_query_interface import arango_connection_finder, entity_degree, get_arango_keys, get_arango_subgraph
 import json
 from typing import List
 import logging
@@ -118,18 +122,47 @@ async def auto_relationship_builder(request: Request):
 
 @router.get("/arango-relationship-builder")
 async def arango_relationship_builder(request: Request):
-    arango_connection_finder(get_nxadb_graph())
-    return {200:""}
-
-@router.get("/get-arango-communities")
-async def get_arango_communities(request: Request):
-    arango_communities()
+    arango_connection_finder()
     return {200:""}
 
 @router.get("/leiden-communities")
 async def leiden_communities(request: Request):
     find_communities()
     logger.warning(f"Updated {len(get_community_summaries())} summaries")
+    return {200:""}
+
+@router.get("/cu-communities")
+async def cu_communities(request: Request):
+    louvian()
+    return {200:""}
+
+@router.get("/best-string-degree/{text}")
+async def best_string_degree(request: Request,text:str):
+    entity_degree(get_all_entities_from_string(text))
+    return {200:""}
+
+@router.get("/get-entities/{text}")
+async def get_entities(request: Request,text:str):
+    get_arango_keys(get_all_entities_from_string(text))
+    return {200:""}
+
+@router.get("/get-subgraph/{text}")
+async def get_entities(request: Request,text:str):
+    smart_keys = get_arango_keys(get_all_entities_from_string(text))
+    logger.warning(get_nxadb_subgraph(([int(key) for key in smart_keys])))
+    return {200:""}
+
+@router.get("/get-subgraph-rank/{text}")
+async def get_entities(request: Request,text:str):
+    smart_keys = get_arango_keys(get_all_entities_from_string(text))
+    sub_graph = get_nxadb_subgraph(([int(key) for key in smart_keys]))
+    if len(sub_graph.edges)>2:
+        pagerank(sub_graph)
+    return {200:""}
+
+@router.get("/substring-edge-creator")
+async def substring_edge_creator(request: Request):
+    add_substring_edges()
     return {200:""}
 
 @router.get("/print-community-summaries")

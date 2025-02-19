@@ -4,8 +4,9 @@ from langchain_community.graphs import ArangoGraph
 import nx_arangodb  as nxadb
 from arango import ArangoClient
 import os
-from kg_interface import filter_word_list_for_entities, standardize_entity_name
+from kg_interface import filter_word_list_for_entities, add_relationship, convert_to_multidigraph, kg_networkx_degree_hist
 import logging
+from typing import List
 
 logger = logging.getLogger("Arango_query_interface")
 
@@ -26,12 +27,12 @@ arangago_QA_chain = ArangoGraphQAChain.from_llm(
 arangago_QA_chain.return_aql_query = False
 arangago_QA_chain.return_aql_result = True
 
-def arango_connection_finder(nxadb_graph:nxadb.Graph)->None:
+def arango_connection_finder()->None:
     arangago_QA_chain.max_aql_generation_attempts = 3
     arangago_QA_chain.return_aql_query = False
     arangago_QA_chain.return_aql_result = True
     smart_result = arangago_QA_chain.invoke(
-        f"Get each node with a degree less than three." 
+        f"Get each node with less than three outbound edges." 
     )['aql_result']
     arangago_QA_chain.return_aql_query = True
     arangago_QA_chain.return_aql_result = False
@@ -40,14 +41,37 @@ def arango_connection_finder(nxadb_graph:nxadb.Graph)->None:
         summary_entities = filter_word_list_for_entities(node['summary'].split(' '))
         for entity in summary_entities:
             try:
-                logger.warning(arangago_QA_chain.invoke(
-                    f"Add an edge between the node with name attribute {node['name']} and {entity}."))
+                # logger.warning(arangago_QA_chain.invoke(
+                #     f"Add an edge between the node with name attribute {node['name']} and {entity}."))
+                add_relationship(node['name'],entity,'unknown','unknown')
             except ValueError:
                 pass
+    convert_to_multidigraph()
+    kg_networkx_degree_hist()
 
-def arango_communities()->None:
+def entity_degree(names:List[str])->None:
+    arangago_QA_chain.max_aql_generation_attempts = 5
+    arangago_QA_chain.return_aql_query = False
+    arangago_QA_chain.return_aql_result = True
     logger.warning(
         arangago_QA_chain.invoke(
-            f"Identify communities" 
+            f"What is the degree for the node with name attribute: {names[0]}" 
         )
     )
+
+def get_arango_keys(names:List[str])->List[int]:
+    arangago_QA_chain.max_aql_generation_attempts = 5
+    arangago_QA_chain.return_aql_query = False
+    arangago_QA_chain.return_aql_result = True
+    return arangago_QA_chain.invoke(
+            f"Get all the keys for nodes with a name attribute matching one of the strings in this list: {names}" 
+        )['aql_result']
+
+def get_arango_subgraph(node_ids:List[int])->List[int]:
+    arangago_QA_chain.max_aql_generation_attempts = 5
+    arangago_QA_chain.return_aql_query = False
+    arangago_QA_chain.return_aql_result = True
+    return arangago_QA_chain.invoke(
+            f"Get the subgraph of the sudan graph for these nodes: {node_ids}" 
+        )['aql_result']
+    

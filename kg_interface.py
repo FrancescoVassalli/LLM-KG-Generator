@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import igraph as ig
 import leidenalg as la
 from community_summary_interface import generate_community_summary
-
+from itertools import chain
 
 logger = logging.getLogger("kg_interface")
 
@@ -54,6 +54,14 @@ def print_edges()->None:
 
 def get_nxadb_graph()->nxadb.Graph:
     return nxadb_graph
+
+def get_nxadb_subgraph(node_ids:List[int])->nxadb.Graph:
+    nx_subgraph = nx_graph.subgraph(node_ids)
+    return nxadb.MultiDiGraph(
+        incoming_graph_data=nx_subgraph,
+        name="temp_SubGraph_DoNot_Use",
+        overwrite_graph=True
+    )
 
 def standardize_summary_text(summary:str)->str:
     return " ".join([standardize_entity_name(word) for word in summary.split(' ')])
@@ -124,6 +132,20 @@ def connect_nodes_by_summary()->None:
     convert_to_multidigraph()
     kg_networkx_degree_hist()
 
+def add_substring_edges()->None:
+    node_i_map = make_ig_nx_map(nx_graph)
+    for i in range(len(nx_graph.nodes())):
+        node_i_id = node_i_map[i]
+        for j in range(i+1,len(nx_graph.nodes())):
+            node_j_id = node_i_map[j]
+            if nx_graph.nodes[node_i_id]['name'] in nx_graph.nodes[node_j_id]['name']:
+                add_relationship(nx_graph.nodes[node_i_id]['name'],nx_graph.nodes[node_j_id]['name'],'substring','substring')
+            if nx_graph.nodes[node_j_id]['name'] in nx_graph.nodes[node_i_id]['name']:
+                add_relationship(nx_graph.nodes[node_j_id]['name'],nx_graph.nodes[node_i_id]['name'],'substring','substring')
+    convert_to_multidigraph()
+    kg_networkx_degree_hist()
+
+
 def filter_word_list_for_entities(words:List[str])->List[str]:
     return [word for word in words if check_for_entity(word)]
 
@@ -153,6 +175,35 @@ def find_communities()->None:
         new_community_summaries[i] = summary
     set_communities(new_communities)
     set_community_summaries(new_community_summaries)
+
+def convert_louvian_names_to_ids(name:str)->int:
+    parts = name.split('/')
+    return int(parts[1])
+
+def louvian()->None:
+    new_communities: Dict[int,str]={}
+    new_community_summaries: Dict[int,str]={}
+    partition = nx.community.louvain_communities(nxadb_graph,seed=1)
+    logger.warning(f"Louvian output\n{partition}")
+    for i, community in enumerate(partition):
+        community  = [convert_louvian_names_to_ids(node_name) for node_name in community]
+        community_attribute_dict = {entity_id: i for entity_id in community}
+        nx.set_node_attributes(nx_graph,community_attribute_dict,"community")
+        new_communities[i] = community
+        try:
+            summary = generate_community_summary(nxadb_graph,community)
+        except KeyError as e:
+            logger.exception(f"KeyError for {nxadb_graph.nodes}")
+            raise e
+        logger.warning(f"Generated community summary {summary}")
+        new_community_summaries[i] = summary
+    set_communities(new_communities)
+    set_community_summaries(new_community_summaries)
+
+def pagerank(graph:nxadb.MultiDiGraph)->None:
+    rank = nx.link_analysis.pagerank_alg.pagerank(graph)
+    logger.warning(f"Rank output\n{rank}")
+   
 
 def set_communities(incoming:Dict[int,str])->None:
     global kg_communities
@@ -198,6 +249,17 @@ def standardize_relationship_name(unsafe_name:str)->str:
     unsafe_name = unsafe_name.lower().strip()
     return alpha_check.sub('',unsafe_name)+'_relationship'
 
+def get_all_entities_from_string(text:str)->List[str]:
+    single_word_entities  = filter_word_list_for_entities([standardize_entity_name(word) for word in text.split(' ')])
+    double_words = [" ".join(pair) for pair in zip(text.split(), text.split()[1:])]
+    double_word_entities  = filter_word_list_for_entities([standardize_entity_name(word) for word in double_words])
+    triplets = [" ".join(triplet) for triplet in zip(text.split(), text.split()[1:], text.split()[2:])]
+    triple_word_entities = filter_word_list_for_entities([standardize_entity_name(word) for word in triplets])
+    quadruplets = [" ".join(quad) for quad in zip(text.split(), text.split()[1:], text.split()[2:], text.split()[3:])]
+    quad_word_entities = filter_word_list_for_entities([standardize_entity_name(word) for word in quadruplets])
+    return list(chain(double_word_entities, triple_word_entities, quad_word_entities, single_word_entities))
+
+
 def get_relationship_key(start_name:str,end_name:str,relationship_name:str)->Tuple[str,str,str]:
     return (standardize_entity_name(start_name),standardize_entity_name(end_name),standardize_relationship_name(relationship_name))
 
@@ -234,8 +296,8 @@ check_for_entity_tool_def = {
 def add_entity(entity_name:str,entity_summary:str)->HTTPResponse:
     if check_for_entity(entity_name):
         return HTTPResponse(status=400,detail=f"Entity {entity_name} cannot be added because it is already in the knowledge graph")
-    entity_name = standardize_entity_name(entity_name)
-    kg[entity_name] = Entity(id=get_next_entity_id(), name=entity_name,summary=entity_summary,sources=[])
+    standarized_entity_name = standardize_entity_name(entity_name)
+    kg[standarized_entity_name] = Entity(id=get_next_entity_id(), name=standarized_entity_name,summary=entity_summary,sources=[entity_name])
     return HTTPResponse()
 
 def add_entity_tool(entity_name:str,entity_summary:str)->str:
