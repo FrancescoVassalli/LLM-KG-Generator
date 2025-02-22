@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 from openai import OpenAI
 import asyncio
+import nx_arangodb  as nxadb
 from kg_interface import (
     check_for_entity_tool, 
     check_for_entity_tool_def, 
@@ -153,12 +154,22 @@ async def get_entities(request: Request,text:str):
     return {200:""}
 
 @router.get("/get-subgraph-rank/{text}")
-async def get_entities(request: Request,text:str):
+async def get_answer_entity_top_rank(request: Request,text:str):
     smart_keys = get_arango_keys(get_all_entities_from_string(text))
     sub_graph = get_nxadb_subgraph(([int(key) for key in smart_keys]))
     if len(sub_graph.edges)>2:
-        pagerank(sub_graph)
-    return {200:""}
+        return {200:get_most_influencial_pagerank(sub_graph)}
+    return {200:False}
+
+def get_most_influencial_pagerank(sub_graph:nxadb.MultiDiGraph)->str:
+    ranking = pagerank(sub_graph)
+    max_rank = 0
+    best_rank_name = None
+    for key, data in sub_graph.nodes(data=True):
+        if ranking[key]>max_rank:
+            max_rank = ranking[key]
+            best_rank_name = data['name']
+    return f"The Arango DB cuGraph pagerank predicts that {best_rank_name} is the most influencial entity amoung those mentioned here."
 
 @router.get("/substring-edge-creator")
 async def substring_edge_creator(request: Request):
@@ -189,7 +200,7 @@ async def get_community_answers(request: Request,text:str):
     return {200:""}
 
 @router.get("/get-global-answer/{text}")
-async def get_community_answers(request: Request,text:str):
+async def global_answer(request: Request,text:str):
     tasks = [is_community_relevant(community_summary,text) for community_summary in get_community_summaries().values()]
     relevancy_results = await asyncio.gather(*tasks)
     relevant_community_summaries  = [community_summary for community_summary, relevancy_score in zip(get_community_summaries().values(),relevancy_results) if relevancy_score>20]
@@ -197,8 +208,16 @@ async def get_community_answers(request: Request,text:str):
     tasks = [complete_community_answer(relevant_summary,text) for relevant_summary in relevant_community_summaries]
     community_answers = await asyncio.gather(*tasks)
     global_answer = get_global_answer(community_answers,relevant_scores,text)
-    logger.warning(global_answer)
-    return {200:""}
+    return {200:global_answer}
+
+@router.get("/hybrid-answer/{text}")
+async def get_hybrid_answer(request: Request,text:str):
+    text_answer = (await global_answer(request,text))[200]
+    influence_sentence  = await get_answer_entity_top_rank(request,text_answer)
+    if influence_sentence[200]==False:
+        return text_answer
+    else:
+        return f"{text_answer}\n{influence_sentence[200]}"
 
 @router.get("/check_text_for_entities/{text}")
 async def check_text_for_entities(request: Request, text:str):

@@ -13,9 +13,6 @@ COMMUNITY_SUMMARY_SYSTEM_PROMPT = ''.join([
 
 logger = logging.getLogger("community_summary")
 
-
-
-
 def generate_community_summary(nx_graph:nx.Graph,community:List[int])->str:
     if len(community)==1:
         return nx_graph.nodes[community[0]]['summary']

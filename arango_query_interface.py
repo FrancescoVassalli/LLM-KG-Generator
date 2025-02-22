@@ -41,8 +41,8 @@ def arango_connection_finder()->None:
         summary_entities = filter_word_list_for_entities(node['summary'].split(' '))
         for entity in summary_entities:
             try:
-                # logger.warning(arangago_QA_chain.invoke(
-                #     f"Add an edge between the node with name attribute {node['name']} and {entity}."))
+                logger.warning(arangago_QA_chain.invoke(
+                    f"Add an edge between the node with name attribute {node['name']} and {entity}."))
                 add_relationship(node['name'],entity,'unknown','unknown')
             except ValueError:
                 pass
@@ -63,6 +63,11 @@ def get_arango_keys(names:List[str])->List[int]:
     arangago_QA_chain.max_aql_generation_attempts = 5
     arangago_QA_chain.return_aql_query = False
     arangago_QA_chain.return_aql_result = True
+    arangago_QA_chain.aql_examples = '''WITH sudan_node
+FOR node IN sudan_node
+ 	FILTER node.name IN ['unitednations', 'unitedstates', 'saudiarabia', 'sudanesearmy', 'southsudan', 'internationalcriminalcourt', 'intergovernmentalauthorityondevelopment', 'internationalcriminalcourticc', 'sudan', 'darfur']
+RETURN node._key
+'''
     return arangago_QA_chain.invoke(
             f"Get all the keys for nodes with a name attribute matching one of the strings in this list: {names}" 
         )['aql_result']

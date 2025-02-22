@@ -56,7 +56,9 @@ def get_nxadb_graph()->nxadb.Graph:
     return nxadb_graph
 
 def get_nxadb_subgraph(node_ids:List[int])->nxadb.Graph:
-    nx_subgraph = nx_graph.subgraph(node_ids)
+    db_to_local_key_map = make_ig_nx_map(nx_graph)
+    subgraph_keys = [db_to_local_key_map[i] for i in node_ids]
+    nx_subgraph = nx_graph.subgraph(subgraph_keys)
     return nxadb.MultiDiGraph(
         incoming_graph_data=nx_subgraph,
         name="temp_SubGraph_DoNot_Use",
@@ -201,9 +203,7 @@ def louvian()->None:
     set_community_summaries(new_community_summaries)
 
 def pagerank(graph:nxadb.MultiDiGraph)->None:
-    rank = nx.link_analysis.pagerank_alg.pagerank(graph)
-    logger.warning(f"Rank output\n{rank}")
-   
+    return nx.link_analysis.pagerank_alg.pagerank(graph)
 
 def set_communities(incoming:Dict[int,str])->None:
     global kg_communities
@@ -460,6 +460,8 @@ check_for_relationship_tool_def = {
 }
 
 def add_relationship(start_entity_name:str, end_entity_name:str, relationship_name:str, relationship_summary:str)->HTTPResponse:
+    if start_entity_name==end_entity_name:
+            return HTTPResponse(status=400,detail=f"Cannot add relationship {relationship_name} between {start_entity_name} and {end_entity_name} because self relationships are not allowed.")
     relationship_check_response  = check_for_relationship(start_entity_name,end_entity_name,relationship_name)
     if relationship_check_response.status == 200:
         if relationship_check_response.detail == "False":
