@@ -169,7 +169,7 @@ def get_most_influencial_pagerank(sub_graph:nxadb.MultiDiGraph)->str:
         if ranking[key]>max_rank:
             max_rank = ranking[key]
             best_rank_name = data['name']
-    return f"The Arango DB cuGraph pagerank predicts that {best_rank_name} is the most influencial entity amoung those mentioned here."
+    return f"The Arango DB cuGraph pagerank predicts that {best_rank_name} is the most influential entity among those mentioned here."
 
 @router.get("/substring-edge-creator")
 async def substring_edge_creator(request: Request):

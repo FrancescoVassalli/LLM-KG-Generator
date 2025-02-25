@@ -5,12 +5,6 @@ import logging
 from utils import sort_list2_accordingto_list1, MAX_CONTEXT_WINDOW
 client = OpenAI()
 
-COMMUNITY_SUMMARY_SYSTEM_PROMPT = ''.join([
-        'You are a detial oriented news summarizer.',
-        'The user will provided are several details of items in recent news',
-        "Respond with a summary about the user's input."
-    ])
-
 logger = logging.getLogger("community_summary")
 
 def generate_community_summary(nx_graph:nx.Graph,community:List[int])->str:
@@ -30,6 +24,12 @@ def generate_community_summary(nx_graph:nx.Graph,community:List[int])->str:
         context_window+=len(community_entity_summary)
         community_summary_input.append(community_entity_summary)
     return complete_community_summary('\n'.join(community_summary_input))
+
+COMMUNITY_SUMMARY_SYSTEM_PROMPT = ''.join([
+        'You are a detial oriented news summarizer.',
+        'The user will provided are several details of items in recent news',
+        "Respond with a summary about the user's input."
+    ])
 
 def complete_community_summary(community_summary_input:str)->str:
     
