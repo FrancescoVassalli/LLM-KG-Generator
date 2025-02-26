@@ -40,7 +40,7 @@ from community_answer_interface import (
 )
 from arango_query_interface import arango_connection_finder, entity_degree, get_arango_keys, get_arango_subgraph
 import json
-from typing import List
+from typing import List, Dict
 import logging
 client = OpenAI()
 
@@ -200,18 +200,20 @@ async def get_community_answers(request: Request,text:str):
     return {200:""}
 
 @router.get("/get-global-answer/{text}")
-async def global_answer(request: Request,text:str):
+async def global_answer(request: Request,text:str)->Dict[int,str]:
     tasks = [is_community_relevant(community_summary,text) for community_summary in get_community_summaries().values()]
     relevancy_results = await asyncio.gather(*tasks)
     relevant_community_summaries  = [community_summary for community_summary, relevancy_score in zip(get_community_summaries().values(),relevancy_results) if relevancy_score>20]
+    logger.warning(f"Determined {len(relevant_community_summaries)} relevant communities")
     relevant_scores  = [relevancy_score for relevancy_score in relevancy_results if relevancy_score>20]
     tasks = [complete_community_answer(relevant_summary,text) for relevant_summary in relevant_community_summaries]
     community_answers = await asyncio.gather(*tasks)
+    logger.warning(f"Generated community answers")
     global_answer = get_global_answer(community_answers,relevant_scores,text)
     return {200:global_answer}
 
-@router.get("/hybrid-answer/{text}")
-async def get_hybrid_answer(request: Request,text:str):
+@router.post("/hybrid-answer/{text}")
+async def get_hybrid_answer(request: Request,text:str)->str:
     text_answer = (await global_answer(request,text))[200]
     influence_sentence  = await get_answer_entity_top_rank(request,text_answer)
     if influence_sentence[200]==False:
